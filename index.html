@@ -15,7 +15,7 @@
     .card {
       background: #1e293b;
       border-radius: 16px;
-      max-width: 480px;
+      max-width: 600px;
       margin: auto;
       padding: 1.5rem;
       box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
@@ -57,7 +57,7 @@
     }
     .table-wrapper {
       width: 100%;
-      max-width: 320px;
+      max-width: 600px;
       margin: 0 auto;
       border-radius: 12px;
       overflow: hidden;
@@ -70,7 +70,7 @@
     table {
       width: 100%;
       border-collapse: collapse;
-      font-size: 0.7rem;
+      font-size: 0.75rem;
       min-width: 100%;
     }
     th, td {
@@ -110,6 +110,18 @@
       color: #64748b;
       margin-top: 1.5rem;
     }
+    .gain {
+      color: #4ade80;
+      font-weight: bold;
+    }
+    .loss {
+      color: #f87171;
+      font-weight: bold;
+    }
+    .summary-row td {
+      font-weight: 600;
+      background-color: #1e293b;
+    }
   </style>
 </head>
 <body>
@@ -131,6 +143,8 @@
               <th>Amount</th>
               <th>Value</th>
               <th>%</th>
+              <th>Profit/Loss</th>
+              <th>Profit/Loss %</th>
             </tr>
           </thead>
           <tbody id="holdingsBody"></tbody>
@@ -142,6 +156,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script>
+    // Portfolio coins with amounts
     const fullPortfolio = [
       { id:'bitcoin', symbol:'BTC', amount:0.00187616 },
       { id:'ethereum', symbol:'ETH', amount:0.08616416 },
@@ -151,14 +166,56 @@
       { id:'aptos', symbol:'APT', amount:3.97927138 },
     ];
 
-   const colors = [
-  '#064E3B', // Dark forest green
-  '#065F46', // Evergreen
-  '#047857', // Medium-dark green
-  '#059669', // Balanced green
-  '#10B981', // Bright green
-  '#34D399', // Soft emerald
-];
+    // Purchase data: EUR invested, buy price EUR per coin, # coins purchased
+    // Converted to USD for calculations using eurToUsdRate = 1.08
+    const eurToUsdRate = 1.08;
+
+    // Buy data keyed by symbol, amounts and buy price EUR
+    // Derived from your data, converting amounts and prices:
+    // We'll calculate invested USD = amount * buy price EUR * rate
+    const buyData = {
+      BTC: { investedEUR: 125, priceEUR: 70.545, amount: 0.00187616 },
+      SOL: { investedEUR: 30, priceEUR: 99.35, amount: 0.027092391 },
+      APT: { investedEUR: 20, priceEUR: 9.32, amount: 3.97927138 },
+      ARB: { 
+        // Sum ARB investments since multiple buys
+        investedEUR: 100 + 100 + 100,
+        priceEUR: null, // We'll calculate weighted average price EUR below
+        amount: 729.95583,
+      },
+      APE: { investedEUR: 100, priceEUR: 0.687, amount: 71.739362 },
+      ETH: { 
+        investedEUR: 60 + 66 + 75,
+        priceEUR: null, // weighted avg price EUR below
+        amount: 0.08616416,
+      }
+    };
+
+    // For ARB and ETH, calculate weighted average buy price EUR:
+    // ARB buys: 
+    // 06/11/2024: 100€ at 0.5057€/coin, 200.4660303 coins
+    // 20/12/2024: 100€ at 0.7€/coin, 143.0098082 coins
+    // 15/04/2025: 100€ at 0.25874€/coin, 386.48 coins
+    // Total invested EUR: 300
+    // Total coins: 200.4660303 + 143.0098082 + 386.48 = 729.9558385
+    // Weighted avg price EUR = total invested EUR / total coins
+    buyData.ARB.priceEUR = 300 / 729.95583;
+
+    // ETH buys:
+    // 21/05/2025: 60€ at 2488.15 USD per ETH (need to convert to EUR price)
+    // 28/05/2025: 66€ at 2632.31 USD per ETH
+    // 05/06/2025: 75€ at 2603.43 USD per ETH
+    // But we have only EUR invested and amounts
+    // For simplicity, calculate weighted avg price EUR:
+    // total EUR invested = 201
+    // total amount = 0.02665515 + 0.02760122 + 0.03190779 = 0.08616416
+    buyData.ETH.priceEUR = 201 / 0.08616416;
+
+    const colors = [
+      '#064E3B', '#065F46', '#047857',
+      '#059669', '#10B981', '#34D399',
+    ];
+
     let portfolio = [];
     let allocChart;
 
@@ -171,37 +228,73 @@
       const prices = await fetchPrices();
       let total = 0;
       portfolio = fullPortfolio.map(c => {
-        const price = prices[c.id]?.usd || 0;
-        const value = price * c.amount;
-        total += value;
-        return { ...c, price, value };
-      }).filter(c => c.value > 0.5);
+        const priceUSD = prices[c.id]?.usd || 0;
+        const valueUSD = priceUSD * c.amount;
+        total += valueUSD;
+
+        // Calculate invested USD based on buyData
+        const buy = buyData[c.symbol];
+        const investedUSD = buy ? buy.investedEUR * eurToUsdRate : 0;
+        const profitUSD = valueUSD - investedUSD;
+        const profitPercent = investedUSD ? (profitUSD / investedUSD) * 100 : 0;
+
+        return {
+          ...c,
+          priceUSD,
+          valueUSD,
+          investedUSD,
+          profitUSD,
+          profitPercent,
+        };
+      }).filter(c => c.valueUSD > 0.5);
 
       portfolio.forEach(c => {
-        c.percent = total ? ((c.value / total) * 100).toFixed(1) : '0.0';
+        c.percent = total ? ((c.valueUSD / total) * 100).toFixed(1) : '0.0';
       });
-      portfolio.sort((a, b) => b.value - a.value);
+      portfolio.sort((a, b) => b.valueUSD - a.valueUSD);
 
       document.getElementById('totalValue').textContent = `$${total.toFixed(2)}`;
       document.getElementById('selectedInfo').textContent = 'Total Value';
 
-      renderTable();
+      renderTable(total);
       renderChart();
     }
 
-    function renderTable() {
+    function renderTable(total) {
       const tbody = document.getElementById('holdingsBody');
       tbody.innerHTML = '';
+
+      let totalInvested = 0;
+      let totalProfit = 0;
+
       portfolio.forEach((c, index) => {
+        totalInvested += c.investedUSD;
+        totalProfit += c.profitUSD;
+
+        const profitClass = c.profitUSD >= 0 ? 'gain' : 'loss';
+
         const tr = document.createElement('tr');
         tr.innerHTML = `
           <td><span class="color-dot" style="background-color:${colors[index]}"></span>${c.symbol}</td>
           <td>${c.amount.toFixed(4)}</td>
-          <td>$${c.value.toFixed(2)}</td>
+          <td>$${c.valueUSD.toFixed(2)}</td>
           <td>${c.percent}%</td>
+          <td class="${profitClass}">${c.profitUSD >= 0 ? '+' : ''}$${c.profitUSD.toFixed(2)}</td>
+          <td class="${profitClass}">${c.profitPercent >= 0 ? '+' : ''}${c.profitPercent.toFixed(1)}%</td>
         `;
         tbody.appendChild(tr);
       });
+
+      // Add total summary row
+      const totalProfitClass = totalProfit >= 0 ? 'gain' : 'loss';
+      const trTotal = document.createElement('tr');
+      trTotal.classList.add('summary-row');
+      trTotal.innerHTML = `
+        <td colspan="4" style="text-align:right;">Total Profit/Loss</td>
+        <td class="${totalProfitClass}">${totalProfit >= 0 ? '+' : ''}$${totalProfit.toFixed(2)}</td>
+        <td class="${totalProfitClass}">${totalInvested ? ((totalProfit / totalInvested) * 100).toFixed(1) : '0.0'}%</td>
+      `;
+      tbody.appendChild(trTotal);
     }
 
     function renderChart() {
@@ -213,7 +306,7 @@
         data: {
           labels: portfolio.map(c => c.symbol),
           datasets: [{
-            data: portfolio.map(c => c.value),
+            data: portfolio.map(c => c.valueUSD),
             backgroundColor: colors,
             borderWidth: 0,
             hoverOffset: 8
@@ -227,7 +320,7 @@
               callbacks: {
                 label: function(ctx) {
                   const coin = portfolio[ctx.dataIndex];
-                  return `${coin.symbol}: $${coin.value.toFixed(2)} (${coin.percent}%)`;
+                  return `${coin.symbol}: $${coin.valueUSD.toFixed(2)} (${coin.percent}%)`;
                 }
               }
             }
