@@ -180,6 +180,7 @@
       portfolio.forEach(c => {
         c.percent = total ? ((c.value / total) * 100).toFixed(1) : '0.0';
       });
+      portfolio.sort((a, b) => b.value - a.value);
 
       document.getElementById('totalValue').textContent = `$${total.toFixed(2)}`;
       document.getElementById('selectedInfo').textContent = 'Total Value';
