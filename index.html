@@ -1,1 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Crypto Portfolio</title>
+  <style>
+    body {
+      margin: 0;
+      background: #0f172a;
+      color: #cbd5e1;
+      font-family: 'Segoe UI', sans-serif;
+      padding: 1rem;
+    }
+    .card {
+      background: #1e293b;
+      border-radius: 16px;
+      max-width: 480px;
+      margin: auto;
+      padding: 1.5rem;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    }
+    h2 {
+      margin: 0 0 1rem;
+      text-align: center;
+      color:  #34D399;
+      font-size: 1.4rem;
+      font-weight: 600;
+    }
+    .chart-container {
+      position: relative;
+      width: 100%;
+      max-width: 320px;
+      margin: 0 auto 1.5rem;
+    }
+    .chart-overlay {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      text-align: center;
+      pointer-events: none;
+    }
+    .value {
+      font-size: 1.4rem;
+      color: #f8fafc;
+      font-weight: bold;
+    }
+    .label {
+      font-size: 0.75rem;
+      color: #94a3b8;
+    }
+    canvas {
+      display: block;
+      width: 100%;
+      height: auto;
+    }
+    .table-wrapper {
+      width: 100%;
+      max-width: 320px;
+      margin: 0 auto;
+      border-radius: 12px;
+      overflow: hidden;
+      margin-top: 1.5rem;
+    }
+    .table-scroll-x {
+      overflow-x: auto;
+      width: 100%;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.7rem;
+      min-width: 100%;
+    }
+    th, td {
+      padding: 0.4rem 0.6rem;
+      text-align: left;
+      white-space: nowrap;
+    }
+    th {
+      background: #334155;
+      color: #cbd5e1;
+      font-weight: 500;
+      position: sticky;
+      top: 0;
+      z-index: 2;
+    }
+    td {
+      color: #e2e8f0;
+      border-bottom: 1px solid #2d3748;
+    }
+    tr:nth-child(even) {
+      background: #1f2937;
+    }
+    tr:hover {
+      background: #334155;
+    }
+    .color-dot {
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      margin-right: 6px;
+      vertical-align: middle;
+    }
+    .footer {
+      text-align: center;
+      font-size: 0.7rem;
+      color: #64748b;
+      margin-top: 1.5rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h2>Portfolio</h2>
+    <div class="chart-container">
+      <canvas id="allocChart"></canvas>
+      <div class="chart-overlay">
+        <div class="value" id="totalValue">$0.00</div>
+        <div class="label" id="selectedInfo">Total Value</div>
+      </div>
+    </div>
+    <div class="table-wrapper">
+      <div class="table-scroll-x">
+        <table>
+          <thead>
+            <tr>
+              <th>Coin</th>
+              <th>Amount</th>
+              <th>Value</th>
+              <th>%</th>
+            </tr>
+          </thead>
+          <tbody id="holdingsBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  <div class="footer">Live prices via CoinGecko (updated every 5 min)</div>
 
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script>
+    const fullPortfolio = [
+      { id:'bitcoin', symbol:'BTC', amount:0.00187616 }
+      { id:'ethereum', symbol:'ETH', amount:0.08616416 },
+      { id:'solana', symbol:'SOL', amount:0.027092391 },
+      { id:'arbitrum', symbol:'ARB', amount:729.95583 },
+      { id:'apecoin', symbol:'APE', amount:71.739362 },
+      { id:'aptos', symbol:'APT', amount:3.97927138 },
+    ];
+
+   const colors = [
+  '#064E3B', // Dark forest green
+  '#065F46', // Evergreen
+  '#047857', // Medium-dark green
+  '#059669', // Balanced green
+  '#10B981', // Bright green
+  '#34D399', // Soft emerald
+];
+    let portfolio = [];
+    let allocChart;
+
+    async function fetchPrices() {
+      const ids = fullPortfolio.map(c => c.id).join(',');
+      return (await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd`)).json();
+    }
+
+    async function update() {
+      const prices = await fetchPrices();
+      let total = 0;
+      portfolio = fullPortfolio.map(c => {
+        const price = prices[c.id]?.usd || 0;
+        const value = price * c.amount;
+        total += value;
+        return { ...c, price, value };
+      }).filter(c => c.value > 0.5);
+
+      portfolio.forEach(c => {
+        c.percent = total ? ((c.value / total) * 100).toFixed(1) : '0.0';
+      });
+
+      document.getElementById('totalValue').textContent = `$${total.toFixed(2)}`;
+      document.getElementById('selectedInfo').textContent = 'Total Value';
+
+      renderTable();
+      renderChart();
+    }
+
+    function renderTable() {
+      const tbody = document.getElementById('holdingsBody');
+      tbody.innerHTML = '';
+      portfolio.forEach((c, index) => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td><span class="color-dot" style="background-color:${colors[index]}"></span>${c.symbol}</td>
+          <td>${c.amount.toFixed(4)}</td>
+          <td>$${c.value.toFixed(2)}</td>
+          <td>${c.percent}%</td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    function renderChart() {
+      const ctx = document.getElementById('allocChart').getContext('2d');
+      if (allocChart) allocChart.destroy();
+
+      allocChart = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+          labels: portfolio.map(c => c.symbol),
+          datasets: [{
+            data: portfolio.map(c => c.value),
+            backgroundColor: colors,
+            borderWidth: 0,
+            hoverOffset: 8
+          }]
+        },
+        options: {
+          cutout: '72%',
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              callbacks: {
+                label: function(ctx) {
+                  const coin = portfolio[ctx.dataIndex];
+                  return `${coin.symbol}: $${coin.value.toFixed(2)} (${coin.percent}%)`;
+                }
+              }
+            }
+          },
+          onClick: (e, elements) => {
+            if (elements.length > 0) {
+              const i = elements[0].index;
+              const c = portfolio[i];
+              document.getElementById('totalValue').textContent = `${c.amount.toFixed(4)} ${c.symbol}`;
+              document.getElementById('selectedInfo').textContent = `${c.percent}% of portfolio`;
+            } else {
+              update();
+            }
+          }
+        }
+      });
+    }
+
+    update();
+    setInterval(update, 300000);
+  </script>
+</body>
+</html>
